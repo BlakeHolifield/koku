@@ -7,6 +7,7 @@ import copy
 import logging
 
 from django.db.models import CharField
+from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from django.db.models import F
 from django.db.models import Value
@@ -60,7 +61,6 @@ class GCPReportQueryHandler(ReportQueryHandler):
 
         self.group_by_options = self._mapper.provider_map.get("group_by_options")
         self._limit = parameters.get_filter("limit")
-        self.is_csv_output = parameters.accept_type and "text/csv" in parameters.accept_type
         self.group_by_alias = {"service": "service_alias", "gcp_project": "project_name"}
 
         # We need to overwrite the pack keys here to include the credit
@@ -101,6 +101,9 @@ class GCPReportQueryHandler(ReportQueryHandler):
         annotations = {
             "date": self.date_trunc("usage_start"),
             "cost_units": Coalesce(self._mapper.cost_units_key, Value(units_fallback)),
+            # set a default value for exchange rates
+            # the real values are set with get_exchange_rate_annotation
+            "exchange_rate": Value(1, output_field=DecimalField()),
         }
         if self._mapper.usage_units_key:
             units_fallback = self._mapper.report_type_map.get("usage_units_fallback")
@@ -200,8 +203,6 @@ class GCPReportQueryHandler(ReportQueryHandler):
             if self._delta:
                 query_data = self.add_deltas(query_data, query_sum)
 
-            is_csv_output = self.parameters.accept_type and "text/csv" in self.parameters.accept_type
-
             order_date = None
             for i, param in enumerate(query_order_by):
                 if check_if_valid_date_str(param):
@@ -229,7 +230,7 @@ class GCPReportQueryHandler(ReportQueryHandler):
                 # &order_by[cost]=desc&order_by[date]=2021-08-02
                 query_data = self.order_by(query_data, query_order_by)
 
-            if is_csv_output:
+            if self.is_csv_output:
                 if self._limit:
                     data = self._ranked_list(list(query_data))
                 else:

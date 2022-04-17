@@ -95,6 +95,8 @@ class ReportQueryHandler(QueryHandler):
 
         self.query_filter = self._get_filter()
 
+        self.is_csv_output = self.parameters.accept_type and "text/csv" in self.parameters.accept_type
+
     @cached_property
     def query_table_access_keys(self):
         """Return the access keys specific for selecting the query table."""
@@ -1019,7 +1021,9 @@ class ReportQueryHandler(QueryHandler):
         """
         delta_group_by = ["date"] + self._get_group_by()
         delta_filter = self._get_filter(delta=True)
-        previous_query = self.query_table.objects.filter(delta_filter)
+        previous_query = self.query_table.objects.filter(delta_filter).annotate(**self.annotations)
+        exchange_annotation = self.get_exchange_rate_annotation(previous_query)
+        previous_query = previous_query.annotate(**exchange_annotation)
         previous_dict = self._create_previous_totals(previous_query, delta_group_by)
         for row in query_data:
             key = tuple(row[key] for key in delta_group_by)

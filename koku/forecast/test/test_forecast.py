@@ -11,6 +11,7 @@ from datetime import timedelta
 from decimal import Decimal
 from unittest.mock import Mock
 from unittest.mock import patch
+from uuid import uuid4
 
 from statsmodels.tools.sm_exceptions import ValueWarning
 
@@ -190,19 +191,11 @@ class AWSForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", AWSCostForecastView)
         instance = AWSForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.AWSForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):
@@ -239,19 +232,11 @@ class AWSForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", AWSCostForecastView)
         instance = AWSForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.AWSForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):
@@ -280,19 +265,11 @@ class AWSForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", AWSCostForecastView)
         instance = AWSForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.AWSForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for item in results:
             self.assertIsInstance(item.get("date"), date)
@@ -320,23 +297,18 @@ class AWSForecastTest(IamTestCase):
                     )
                 mock_qset = MockQuerySet(expected)
 
-                mocked_table = Mock()
-                mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-                    mock_qset
-                )
-                mocked_table.len = mock_qset.len
-
                 params = self.mocked_query_params("?", AWSCostForecastView)
                 instance = AWSForecast(params)
 
-                instance.cost_summary_table = mocked_table
                 if number < AWSForecast.MINIMUM:
                     # forecasting isn't useful with less than the minimum number of data points.
                     with self.assertLogs(logger="forecast.forecast", level=logging.WARNING):
-                        results = instance.predict()
+                        with patch("forecast.forecast.AWSForecast.get_data", return_value=mock_qset):
+                            results = instance.predict()
                         self.assertEqual(results, [])
                 else:
-                    results = instance.predict()
+                    with patch("forecast.forecast.AWSForecast.get_data", return_value=mock_qset):
+                        results = instance.predict()
 
                     self.assertNotEqual(results, [])
 
@@ -473,19 +445,11 @@ class AzureForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", AzureCostForecastView)
         instance = AzureForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.AzureForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):
@@ -524,19 +488,11 @@ class GCPForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", AzureCostForecastView)
         instance = GCPForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.GCPForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):
@@ -595,6 +551,7 @@ class OCPForecastTest(IamTestCase):
         for n in range(0, 10):
             expected.append(
                 {
+                    "source_uuid": str(uuid4()),
                     "usage_start": (dh.this_month_start + timedelta(days=n)).date(),
                     "total_cost": 5 + (0.01 * n),
                     "infrastructure_cost": 3 + (0.01 * n),
@@ -602,19 +559,11 @@ class OCPForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", OCPCostForecastView)
         instance = OCPForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.OCPForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):
@@ -685,19 +634,11 @@ class OCPAllForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", OCPAllCostForecastView)
         instance = OCPAllForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.OCPAllForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):
@@ -736,19 +677,11 @@ class OCPAWSForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", OCPAWSCostForecastView)
         instance = OCPAWSForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.OCPAWSForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):
@@ -787,20 +720,11 @@ class OCPAzureForecastTest(IamTestCase):
                 }
             )
         mock_qset = MockQuerySet(expected)
-
-        mocked_table = Mock()
-        mocked_table.objects.filter.return_value.order_by.return_value.values.return_value.annotate.return_value = (  # noqa: E501
-            mock_qset
-        )
-
-        mocked_table.len = mock_qset.len
-
         params = self.mocked_query_params("?", OCPAzureCostForecastView)
         instance = OCPAzureForecast(params)
 
-        instance.cost_summary_table = mocked_table
-
-        results = instance.predict()
+        with patch("forecast.forecast.OCPAzureForecast.get_data", return_value=mock_qset):
+            results = instance.predict()
 
         for result in results:
             for val in result.get("values", []):

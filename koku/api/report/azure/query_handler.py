@@ -6,6 +6,7 @@
 import copy
 import logging
 
+from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from django.db.models import F
 from django.db.models import Value
@@ -71,6 +72,9 @@ class AzureReportQueryHandler(ReportQueryHandler):
                 ExpressionWrapper(F(self._mapper.cost_units_key), output_field=CharField()),
                 Value(units_fallback, output_field=CharField()),
             ),
+            # set a default value for exchange rates
+            # the real values are set with get_exchange_rate_annotation
+            "exchange_rate": Value(1, output_field=DecimalField()),
         }
         if self._mapper.usage_units_key:
             units_fallback = self._mapper.report_type_map.get("usage_units_fallback")
@@ -174,8 +178,6 @@ class AzureReportQueryHandler(ReportQueryHandler):
             if self._delta:
                 query_data = self.add_deltas(query_data, query_sum)
 
-            is_csv_output = self.parameters.accept_type and "text/csv" in self.parameters.accept_type
-
             order_date = None
             for i, param in enumerate(query_order_by):
                 if check_if_valid_date_str(param):
@@ -203,7 +205,7 @@ class AzureReportQueryHandler(ReportQueryHandler):
                 # &order_by[cost]=desc&order_by[date]=2021-08-02
                 query_data = self.order_by(query_data, query_order_by)
 
-            if is_csv_output:
+            if self.is_csv_output:
                 if self._limit:
                     data = self._ranked_list(list(query_data))
                 else:
