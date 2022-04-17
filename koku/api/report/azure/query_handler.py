@@ -67,11 +67,17 @@ class AzureReportQueryHandler(ReportQueryHandler):
         units_fallback = self._mapper.report_type_map.get("cost_units_fallback")
         annotations = {
             "date": self.date_trunc("usage_start"),
-            "cost_units": Coalesce(self._mapper.cost_units_key, Value(units_fallback)),
+            "cost_units": Coalesce(
+                ExpressionWrapper(F(self._mapper.cost_units_key), output_field=CharField()),
+                Value(units_fallback, output_field=CharField()),
+            ),
         }
         if self._mapper.usage_units_key:
             units_fallback = self._mapper.report_type_map.get("usage_units_fallback")
-            annotations["usage_units"] = Coalesce(self._mapper.usage_units_key, Value(units_fallback))
+            annotations["usage_units"] = Coalesce(
+                ExpressionWrapper(F(self._mapper.usage_units_key), output_field=CharField()),
+                Value(units_fallback, output_field=CharField()),
+            )
 
         # { query_param: database_field_name }
         fields = self._mapper.provider_map.get("annotations")
@@ -119,7 +125,7 @@ class AzureReportQueryHandler(ReportQueryHandler):
                 )
             sum_query = query.annotate(**sum_annotations).order_by()
 
-            units_value = sum_query.values("cost_units").first().get("cost_units", cost_units_fallback)
+            units_value = self.currency
             sum_units = {"cost_units": units_value}
             if self._mapper.usage_units_key:
                 units_value = sum_query.values("usage_units").first().get("usage_units", usage_units_fallback)
@@ -129,7 +135,7 @@ class AzureReportQueryHandler(ReportQueryHandler):
 
             query_sum = self.calculate_total(**sum_units)
         else:
-            sum_units["cost_units"] = cost_units_fallback
+            sum_units["cost_units"] = self.currency
             if self._mapper.report_type_map.get("annotations", {}).get("count_units"):
                 sum_units["count_units"] = count_units_fallback
             if self._mapper.report_type_map.get("annotations", {}).get("usage_units"):
@@ -150,6 +156,8 @@ class AzureReportQueryHandler(ReportQueryHandler):
         with tenant_context(self.tenant):
             query = self.query_table.objects.filter(self.query_filter)
             query_data = query.annotate(**self.annotations)
+            exchange_annotation = self.get_exchange_rate_annotation(query_data)
+            query_data = query_data.annotate(**exchange_annotation)
             query_group_by = ["date"] + self._get_group_by()
             query_order_by = ["-date"]
             query_order_by.extend(self.order)  # add implicit ordering
@@ -224,19 +232,16 @@ class AzureReportQueryHandler(ReportQueryHandler):
             (dict) The aggregated totals for the query
 
         """
-        query_group_by = ["date"] + self._get_group_by()
         query = self.query_table.objects.filter(self.query_filter)
-        query_data = query.annotate(**self.annotations)
-        query_data = query_data.values(*query_group_by)
+        query = query.annotate(**self.annotations)
+        exchange_annotation = self.get_exchange_rate_annotation(query)
+        query = query.annotate(**exchange_annotation)
         aggregates = self._mapper.report_type_map.get("aggregates")
-        counts = None
 
         total_query = query.aggregate(**aggregates)
         for unit_key, unit_value in units.items():
             total_query[unit_key] = unit_value
 
-        if counts:
-            total_query["count"] = counts
         self._pack_data_object(total_query, **self._mapper.PACK_DEFINITIONS)
 
         return total_query
