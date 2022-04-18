@@ -151,7 +151,7 @@ class AzureReportQueryHandler(ReportQueryHandler):
 
     def add_exchange_to_annotations(self, annotations):
         anno = copy.deepcopy(annotations)
-        anno["cost_units"] = Value(self.currency, output_field=CharField())
+        anno["cost_units_exchanged"] = Value(self.currency, output_field=CharField())
         fields = [
             "infra_total",
             "infra_raw",
