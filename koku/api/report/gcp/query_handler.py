@@ -6,7 +6,6 @@
 import copy
 import logging
 
-from django.db.models import DecimalField
 from django.db.models import F
 from django.db.models import Value
 from django.db.models.functions import Coalesce
@@ -99,9 +98,7 @@ class GCPReportQueryHandler(ReportQueryHandler):
         annotations = {
             "date": self.date_trunc("usage_start"),
             "cost_units": Coalesce(self._mapper.cost_units_key, Value(units_fallback)),
-            # set a default value of 1 for exchange rates for csv requests
-            # the values are set for all other requests in get_exchange_rate_annotation
-            "exchange_rate": Value(1, output_field=DecimalField()),
+            "exchange_rate": self.get_exchange_rate_annotation(),
         }
         if self._mapper.usage_units_key:
             units_fallback = self._mapper.report_type_map.get("usage_units_fallback")
@@ -174,8 +171,6 @@ class GCPReportQueryHandler(ReportQueryHandler):
         with tenant_context(self.tenant):
             query = self.query_table.objects.filter(self.query_filter)
             query = query.annotate(**self.annotations)
-            exchange_annotation = self.get_exchange_rate_annotation(query)
-            query = query.annotate(**exchange_annotation)
 
             query_group_by = ["date"] + self._get_group_by()
             query_order_by = ["-date"]
@@ -255,8 +250,6 @@ class GCPReportQueryHandler(ReportQueryHandler):
         """
         query = self.query_table.objects.filter(self.query_filter)
         query = query.annotate(**self.annotations)
-        exchange_annotation = self.get_exchange_rate_annotation(query)
-        query = query.annotate(**exchange_annotation)
         aggregates = self._mapper.report_type_map.get("aggregates")
 
         total_query = query.aggregate(**aggregates)

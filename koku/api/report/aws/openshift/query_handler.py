@@ -35,8 +35,6 @@ class OCPInfrastructureReportQueryHandlerBase(AWSReportQueryHandler):
         with tenant_context(self.tenant):
             query = self.query_table.objects.filter(self.query_filter)
             query = query.annotate(**self.annotations)
-            exchange_annotation = self.get_exchange_rate_annotation(query)
-            query = query.annotate(**exchange_annotation)
             group_by_value = self._get_group_by()
             query_group_by = ["date"] + group_by_value
             query_order_by = ["-date"]
