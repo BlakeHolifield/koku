@@ -9,6 +9,7 @@ import logging
 from django.db.models import DecimalField
 from django.db.models import ExpressionWrapper
 from django.db.models import F
+from django.db.models import Sum
 from django.db.models import Value
 from django.db.models.fields import CharField
 from django.db.models.functions import Coalesce
@@ -148,6 +149,34 @@ class AzureReportQueryHandler(ReportQueryHandler):
             self._pack_data_object(query_sum, **self._mapper.PACK_DEFINITIONS)
         return query_sum
 
+    def add_exchange_to_annotations(self, annotations):
+        anno = copy.deepcopy(annotations)
+        anno["cost_units"] = Value(self.currency, output_field=CharField())
+        fields = [
+            "infra_total",
+            "infra_raw",
+            "infra_usage",
+            "infra_markup",
+            "sup_total",
+            "sup_raw",
+            "sup_usage",
+            "sup_markup",
+            "cost_total",
+            "cost_raw",
+            "cost_usage",
+            "cost_markup",
+        ]
+        for field in fields:
+            exchanged_field = f"{field}_exchanged"
+            annotation = anno[field]
+            if isinstance(annotation, Value):
+                anno[exchanged_field] = annotation
+            else:
+                anno[exchanged_field] = Sum(
+                    Coalesce("exchange_rate", Value(1, output_field=DecimalField())) * annotation.source_expressions[0]
+                )
+        return anno
+
     def execute_query(self):  # noqa: C901
         """Execute query and return provided data.
 
@@ -165,9 +194,9 @@ class AzureReportQueryHandler(ReportQueryHandler):
             query_group_by = ["date"] + self._get_group_by()
             query_order_by = ["-date"]
             query_order_by.extend(self.order)  # add implicit ordering
-            annotations = self._mapper.report_type_map.get("annotations")
+            annotations = self.add_exchange_to_annotations(self._mapper.report_type_map.get("annotations"))
             query_data = query.values(*query_group_by).annotate(**annotations)
-            query_sum = self._build_sum(query)
+            query_sum = self._build_sum(query_data)
 
             if self._limit and query_data:
                 query_data = self._group_by_ranks(query, query_data)
