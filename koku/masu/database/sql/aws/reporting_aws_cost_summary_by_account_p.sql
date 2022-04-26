@@ -179,7 +179,7 @@ select usage_start,
        usage_account_id,
        avg(total_usage_amount) as avg_usage_amount,
        avg(blended_cost) as avg_blended_cost,
-       sum(Blended_cost) as tot_blended_cost
+       sum(blended_cost) as tot_blended_cost
   from acct10001.reporting_aws_cost_rank_by_account_p
  where usage_start between '2022-03-30'::date and '2022-04-02'::date
  group
@@ -189,4 +189,160 @@ select usage_start,
     by usage_start,
        case when usage_account_id = 'others' then 1 else 0 end::int,
        3 desc
+;
+
+
+
+select distinct
+       usage_account_id,
+       0::numeric(36,16) as total_usage_amount,
+       0::numeric(36,16) as blended_cost
+  from acct10001.reporting_aws_cost_rank_by_account_p
+ where usage_start between '2022-03-30'::date and '2022-04-02'::date
+;
+
+select query_range_date
+  from generate_series('2022-03-30'::date, '2022-04-02'::date, '1 day'::interval) query_range(query_range_date)
+;
+
+
+begin;
+update acct10001.reporting_aws_cost_rank_by_account_p
+   set usage_account_id = 'ZZZZZZZZZZZZZ'
+ where usage_account_id = '9999999999993'
+   and usage_start between '2022-04-01'::date and '2022-04-02'
+;
+/* Should be 2 recs updated */
+commit;
+
+
+with account_defaults as (
+select distinct
+       qrd.query_range_date::date,
+       usage_account_id
+  from acct10001.reporting_aws_cost_rank_by_account_p dat
+ cross
+  join generate_series('2022-03-30'::date, '2022-04-02'::date, '1 day'::interval) qrd(query_range_date)
+ where dat.usage_start between '2022-03-30'::date and '2022-04-02'::date
+),
+
+
+select ad.usage_start,
+       coalesce(dat2.usage_account_id, ad.usage_account_id) as "usage_account_id",
+       avg(coalesce(dat2.total_usage_amount, 0::numeric(36,16)))::numeric(36,16) as "avg_usage_amount",
+       avg(coalesce(dat2.blended_cost, 0::numeric(36,16)))::numeric(36,16) as "avg_cost",
+       sum(coalesce(dat2.blended_cost, 0::numeric(36,16)))::numeric(36,16) as "tot_cost"
+  from (
+         select distinct
+                qrd.usage_start::date,
+                usage_account_id
+           from acct10001.reporting_aws_cost_rank_by_account_p dat
+          cross
+           join generate_series('2022-03-30'::date, '2022-04-02'::date, '1 day'::interval) qrd(usage_start)
+          where dat.usage_start between '2022-03-30'::date and '2022-04-02'::date
+       ) as "ad" -- account defaults
+  left
+  join acct10001.reporting_aws_cost_rank_by_account_p dat2
+    on dat2.usage_start = ad.usage_start
+   and dat2.usage_account_id = ad.usage_account_id
+ group
+    by ad.usage_start,
+       coalesce(dat2.usage_account_id, ad.usage_account_id)
+ order
+    by ad.usage_start,
+       case when coalesce(dat2.usage_account_id, ad.usage_account_id) = 'others' then 1 else 0 end::int,
+       3 desc
+;
+
+
+
+begin;
+update acct10001.reporting_aws_cost_rank_by_account_p
+   set blended_cost = blended_cost * 100.0::numeric(36,16)
+ where usage_account_id = 'ZZZZZZZZZZZZZ'
+   and usage_start between '2022-04-01'::date and '2022-04-02'
+;
+update acct10001.reporting_aws_cost_rank_by_account_p
+   set total_usage_amount = total_usage_amount * 100.0::numeric(36,16)
+ where usage_account_id = 'ZZZZZZZZZZZZZ'
+   and usage_start between '2022-04-01'::date and '2022-04-02'
+;
+commit;
+
+
+/* LATEST VERSION OF QUERY ------ LOOKS SILLY, BUT IS GETTING CLOSE TO WORKING */
+with base_data as (
+-- Get data with windowed aggregations: first by day, second by account
+select usage_start,
+       usage_rank,
+       usage_account_id,
+       others_count,
+       sum(total_usage_amount) over acct as "acct_total_usage",
+       blended_cost,
+       sum(blended_cost) over acct as "acct_total_cost",
+       avg(blended_cost) over ustart as "daily_average_cost",
+       sum(blended_cost) over ustart as "daily_total_cost"
+  from acct10001.reporting_aws_cost_rank_by_account_p
+ where usage_start between '2022-03-30'::date and '2022-04-02'::date
+window ustart as (partition by usage_start),
+       acct   as (partition by usage_account_id)
+),
+detail_cost as (
+-- From base data, create the result set for the day chart
+select 'RANGE_DETAIL' as "rec_type",
+       case usage_account_id when 'others' then 1 else 0 end::int as "acct_order_by",
+       usage_start,
+       usage_rank,
+       usage_account_id,
+       others_count,
+       acct_total_usage,
+       blended_cost,
+       acct_total_cost,
+       daily_average_cost,
+       daily_total_cost
+  from base_data
+),
+rank_cost as (
+-- Get the result set for the top-6 utilization totals
+select distinct
+       'RANGE_RANK' as "rec_type",
+       case usage_account_id when 'others' then 1 else 0 end::int as "acct_order_by",
+       null::date as usage_start,
+       null::int as usage_rank,
+       usage_account_id,
+       others_count,
+       acct_total_usage,
+       null::numeric(36,16) as blended_cost,
+       acct_total_cost,
+       null::numeric(36,16) as daily_average_cost,
+       null::numeric(36,16) as daily_total_cost
+  from base_data
+)
+select rec_type,
+       acct_order_by,
+       usage_start,
+       usage_account_id,
+       others_count,
+       acct_total_usage,
+       blended_cost,
+       acct_total_cost,
+       daily_average_cost,
+       daily_total_cost
+  from rank_cost
+ union all
+select rec_type,
+       acct_order_by,
+       usage_start,
+       usage_account_id,
+       others_count,
+       acct_total_usage,
+       blended_cost,
+       acct_total_cost,
+       daily_average_cost,
+       daily_total_cost
+  from detail_cost
+ order
+    by usage_start nulls first,
+       "acct_order_by",
+       acct_total_usage desc
 ;
