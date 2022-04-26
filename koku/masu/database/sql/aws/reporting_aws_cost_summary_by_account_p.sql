@@ -43,12 +43,13 @@ INSERT INTO {{schema | sqlsafe}}.reporting_aws_cost_summary_by_account_p (
 ;
 
 
-
+/*
 DELETE FROM {{schema | sqlsafe}}.reporting_aws_cost_summary_by_account_p
 WHERE usage_start >= '2022-03-01'::date
     AND usage_start <= '2022-05-01'::date
     AND source_uuid = 'e91b0099-c3d2-49ad-af6c-422abb87482c'
 ;
+*/
 
 CREATE TABLE if not exists acct10001.reporting_aws_cost_rank_by_account_p
 (
@@ -72,6 +73,8 @@ CREATE TABLE if not exists acct10001.reporting_aws_cost_rank_by_account_p
 )
 partition by range (usage_start);
 
+
+-- Get ranked data for graph table
 insert
   into acct10001.reporting_aws_cost_rank_by_account_p
        (
@@ -93,8 +96,8 @@ insert
        )
 -- Re-aggregate for rank > 5
 select usage_start,
-       case when usage_rank > 5  then 999 else usage_rank end::int as usage_rank,
-       case when usage_rank > 5 then '' else usage_account_id end::text as usage_account_id,
+       case when usage_rank > 5  then 6 else usage_rank end::int as usage_rank,
+       case when usage_rank > 5 then 'others' else usage_account_id end::text as usage_account_id,
        case when usage_rank > 5 then 0 else account_alias_id end::bigint as account_alias_id,
        case when usage_rank > 5 then 0 else organizational_unit_id end::int as organizational_unit_id,
        sum((usage_rank > 5)::bool::int)::int as others_count,
@@ -149,7 +152,7 @@ select usage_start,
  order by 1, 2 nulls last
 ;
 
-
+/*
 select usage_start,
        usage_rank,
        usage_account_id,
@@ -168,4 +171,22 @@ select usage_start,
  where usage_start between '2022-03-01'::date and '2022-03-03'::date
 window w as (partition by usage_start)
       ) as x
+;
+*/
+
+-- Query for graph??
+select usage_start,
+       usage_account_id,
+       avg(total_usage_amount) as avg_usage_amount,
+       avg(blended_cost) as avg_blended_cost,
+       sum(Blended_cost) as tot_blended_cost
+  from acct10001.reporting_aws_cost_rank_by_account_p
+ where usage_start between '2022-03-30'::date and '2022-04-02'::date
+ group
+    by usage_start,
+       usage_account_id
+ order
+    by usage_start,
+       case when usage_account_id = 'others' then 1 else 0 end::int,
+       3 desc
 ;
