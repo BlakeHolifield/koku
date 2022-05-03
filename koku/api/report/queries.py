@@ -1,3 +1,4 @@
+# flake8: noqa#
 #
 # Copyright 2021 Red Hat Inc.
 # SPDX-License-Identifier: Apache-2.0
@@ -117,6 +118,8 @@ class ReportQueryHandler(QueryHandler):
     @cached_property
     def query_table(self):
         """Return the database table or view to query against."""
+        if getattr(self, "_from_cost_view", False):
+            LOG.info("****** query_table() property method BEGIN")
         query_table = self._mapper.query_table
         report_type = self._report_type
         report_group = "default"
@@ -128,6 +131,8 @@ class ReportQueryHandler(QueryHandler):
         ) and not check_view_filter_and_group_by_criteria(
             self.query_table_filter_keys, self.query_table_group_by_keys
         ):
+            if getattr(self, "_from_cost_view", False):
+                LOG.info("****** query_table() property method END (return default)")
             return query_table
 
         key_tuple = tuple(
@@ -150,6 +155,11 @@ class ReportQueryHandler(QueryHandler):
         except KeyError:
             msg = f"{report_group} for {report_type} has no entry in views. Using the default."
             LOG.warning(msg)
+            if getattr(self, "_from_cost_view", False):
+                LOG.info("****** query_table() property method END (KeyError)")
+
+        if getattr(self, "_from_cost_view", False):
+            LOG.info("****** query_table() property method END (POST mapper[report_type][report_group])")
         return query_table
 
     def initialize_totals(self):
@@ -739,6 +749,8 @@ class ReportQueryHandler(QueryHandler):
 
         rank_annotations = {}
         if "delta" in self.order:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(f"****** {self.__class__.__name__}.super()._group_by_ranks : handling delta")
             if "__" in self._delta:
                 a, b = self._delta.split("__")
                 rank_annotations = {a: self.report_annotations[a], b: self.report_annotations[b]}
@@ -747,6 +759,10 @@ class ReportQueryHandler(QueryHandler):
                 rank_annotations = {self._delta: self.report_annotations[self._delta]}
                 rank_orders.append(getattr(F(self._delta), self.order_direction)())
         elif self._limit and "offset" in self.parameters.get("filter", {}) and self.parameters.get("order_by"):
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.super()._group_by_ranks : handle limit, offset parameters, and order_by"
+                )
             if self.report_annotations.get(self.order_field):
                 rank_annotations = {self.order_field: self.report_annotations.get(self.order_field)}
             # AWS is special and account alias is a foreign key field so special_rank was annotated on the query
@@ -755,18 +771,28 @@ class ReportQueryHandler(QueryHandler):
             else:
                 rank_orders.append(getattr(F(self.order_field), self.order_direction)())
         else:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.super()._group_by_ranks : handle rank annotations using default_ordering"
+                )
             for key, val in self.default_ordering.items():
                 order_field, order_direction = key, val
             rank_annotations = {order_field: self.report_annotations.get(order_field)}
             rank_orders.append(getattr(F(order_field), order_direction)())
 
         if tag_column in gb[0]:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(f"****** {self.__class__.__name__}.super()._group_by_ranks : handle tag_column in gb[0]")
             rank_orders.append(self.get_tag_order_by(gb[0]))
 
         # this is a sub-query, but not really.
         # in the future, this could be accomplished using CTEs.
         rank_by_total = Window(expression=Rank(), order_by=rank_orders)
         if rank_annotations:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.super()._group_by_ranks : annotate query with rank annotations"
+                )
             ranks = (
                 query.annotate(**self.annotations)
                 .values(*group_by_value)
@@ -774,18 +800,35 @@ class ReportQueryHandler(QueryHandler):
                 .annotate(rank=rank_by_total)
             )
         else:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.super()._group_by_ranks : annotate query with no rank annotations"
+                )
             ranks = query.annotate(**self.annotations).values(*group_by_value).annotate(rank=rank_by_total)
 
         rankings = []
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(
+                f"****** {self.__class__.__name__}.super()._group_by_ranks : Process rank query results into rankings list"
+            )
         for rank in ranks:
             rank_value = rank.get(group_by_value[0])
             rank_value = self.check_missing_rank_value(rank_value)
             if rank_value not in rankings:
                 rankings.append(rank_value)
 
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.super()._group_by_ranks : Process query_return in data")
         for query_return in data:
             query_return = self._apply_group_null_label(query_return, gb)
-        return self._ranked_list(data, rankings)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(
+                f"****** {self.__class__.__name__}.super()._group_by_ranks : call _ranked_list method with data and rankings"
+            )
+        result = self._ranked_list(data, rankings)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.super()._group_by_ranks : returning results to caller")
+        return result
 
     def _ranked_list(self, data_list, ranks=None):
         """Get list of ranked items less than top.

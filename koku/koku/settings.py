@@ -407,6 +407,7 @@ LOGGING = {
         # Setting to WARNING will prevent the INFO level spam.
         "UnleashClient": {"handlers": LOGGING_HANDLERS, "level": UNLEASH_LOGGING_LEVEL},
         "apscheduler": {"handlers": LOGGING_HANDLERS, "level": UNLEASH_LOGGING_LEVEL},
+        "django.db.backends": {"handlers": LOGGING_HANDLERS, "level": logging.ERROR, "propagate": True},  # COST-2597
     },
 }
 

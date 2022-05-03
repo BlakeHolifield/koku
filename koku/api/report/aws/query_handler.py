@@ -1,3 +1,4 @@
+# flake8: noqa#
 #
 # Copyright 2021 Red Hat Inc.
 # SPDX-License-Identifier: Apache-2.0
@@ -196,6 +197,8 @@ class AWSReportQueryHandler(ReportQueryHandler):
         obtain the account results, and each sub_org results.
         Else it will return the original query.
         """
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.execute_query: BEGIN")
         original_filters = copy.deepcopy(self.parameters.parameters.get("filter"))
         sub_orgs_dict = {}
         query_data_results = {}
@@ -212,6 +215,8 @@ class AWSReportQueryHandler(ReportQueryHandler):
             # and filtering on the org unit. Therefore we are removing the group by org unit.
             org_unit_group_by_data = group_by_param.pop(ou_group_by_key)
             # Parent OU filters
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(f"****** {self.__class__.__name__}.execute_query: Get AWSOrganizationalUnit objects")
             org_unit_objects = (
                 AWSOrganizationalUnit.objects.filter(org_unit_id__in=org_unit_group_by_data)
                 .filter(account_alias__isnull=True)
@@ -222,12 +227,20 @@ class AWSReportQueryHandler(ReportQueryHandler):
             if not self.parameters.parameters["group_by"].get("account"):
                 self.parameters.parameters["group_by"]["account"] = ["*"]
                 if self.access:
+                    if getattr(self, "_from_cost_view", False):
+                        LOG.info(
+                            f"****** {self.__class__.__name__}.execute_query: Calling parameters._configure_access_params"
+                        )
                     self.parameters._configure_access_params(self.parameters.caller)
 
             if org_unit_objects:
                 sub_ou_list = []
                 # Loop through parent ids to find children org units 1 level below.
                 for org_unit_object in org_unit_objects:
+                    if getattr(self, "_from_cost_view", False):
+                        LOG.info(
+                            f"****** {self.__class__.__name__}.execute_query: Create AWSOrganizationalUnit subquery"
+                        )
                     sub_query = (
                         AWSOrganizationalUnit.objects.filter(level=(org_unit_object.level + 1))
                         .filter(org_unit_path__icontains=org_unit_object.org_unit_id)
@@ -237,14 +250,22 @@ class AWSReportQueryHandler(ReportQueryHandler):
                         .distinct("org_unit_id")
                     )
                     sub_ou_list.append(sub_query)
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(
+                        f"****** {self.__class__.__name__}.execute_query: Create AWSOrganizationalUnit subquery END"
+                    )
 
                 # only do a union if more than one org_unit_id was passed in.
                 if len(sub_ou_list) > 1:
                     sub_query_set = sub_ou_list.pop()
+                    if getattr(self, "_from_cost_view", False):
+                        LOG.info(f"****** {self.__class__.__name__}.execute_query: Get sub_ou_ids_list")
                     sub_ou_ids_list = sub_query_set.union(*sub_ou_list).values_list("org_unit_id", flat=True)
                     # Note: The django orm won't let you do an order_by & distinct on the union of
                     # multiple queries. The additional order_by &  distinct is essential to handle
                     # use cases like OU_005 being moved from OU_002 to OU_001.
+                    if getattr(self, "_from_cost_view", False):
+                        LOG.info(f"****** {self.__class__.__name__}.execute_query: Create sub_orgs query")
                     sub_orgs = (
                         AWSOrganizationalUnit.objects.filter(org_unit_id__in=sub_ou_ids_list)
                         .filter(account_alias__isnull=True)
@@ -253,18 +274,32 @@ class AWSReportQueryHandler(ReportQueryHandler):
                     )
                 else:
                     sub_orgs = sub_ou_list[0]
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_query: Process sub_orgs query BEGIN")
                 for org_object in sub_orgs:
                     sub_orgs_dict[org_object.org_unit_name] = org_object.org_unit_id, org_object.org_unit_path
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_query: Process sub_orgs query END")
             # First we need to modify the parameters to get all accounts if org unit group_by is used
             self.parameters.set_filter(org_unit_single_level=org_unit_group_by_data)
             self.query_filter = self._get_filter()
 
         # grab the base query
         # (without org_units this is the only query - with org_units this is the query to find the accounts)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(
+                f"****** {self.__class__.__name__}.execute_query: Calling execute_individual_query({org_unit_applied})"
+            )
         query_data, query_sum = self.execute_individual_query(org_unit_applied)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(
+                f"****** {self.__class__.__name__}.execute_query: Post execute_individual_query({org_unit_applied})"
+            )
 
         # Next we want to loop through each sub_org and execute the query for it
         if org_unit_applied:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(f"****** {self.__class__.__name__}.execute_query: post-processing org_unit")
             for sub_org_name, value in sub_orgs_dict.items():
                 sub_org_id, sub_org_path = value
                 if self.parameters.get_filter("org_unit_id"):
@@ -313,6 +348,8 @@ class AWSReportQueryHandler(ReportQueryHandler):
             # If not CSV output and org unit was applied, then reshape the output
             # structures for the JSON serializer
             if org_unit_applied:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_query: formatting org_unit results")
                 query_data = self.format_sub_org_results(query_data_results, query_data, sub_orgs_dict)
         else:
             # For CSV output, if there was a limit, then sent *all* output (base + sub-org, if any)
@@ -331,7 +368,12 @@ class AWSReportQueryHandler(ReportQueryHandler):
 
         # reset to the original query filters
         self.parameters.parameters["filter"] = original_filters
-        return self._format_query_response()
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.execute_query: Calling _format_query_response()")
+        response = self._format_query_response()
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.execute_query: return response")
+        return response
 
     def _format_query_response(self):
         """Format the query response with data.
@@ -581,6 +623,10 @@ select coalesce(raa.account_alias, t.usage_account_id)::text as "account",
             query_table = self.query_table
             LOG.debug(f"Using query table: {query_table}")
             tag_results = None
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.execute_individual_query: Setting base query and annotations"
+                )
             query = query_table.objects.filter(self.query_filter)
             query_data = query.annotate(**self.annotations)
 
@@ -602,19 +648,37 @@ select coalesce(raa.account_alias, t.usage_account_id)::text as "account",
                 )
 
                 if self.parameters.parameters.get("check_tags"):
+                    if getattr(self, "_from_cost_view", False):
+                        LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: Getting related tags")
                     tag_results = self._get_associated_tags(query_table, self.query_filter)
 
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.execute_individual_query: Calling _build_sum() with original query and annotations"
+                )
             query_sum = self._build_sum(query, annotations)
 
             if self._limit and query_data and not org_unit_applied:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(
+                        f"****** {self.__class__.__name__}.execute_individual_query: calling _group_by_ranks() with original query and annotations"
+                    )
                 query_data = self._group_by_ranks(query, query_data)
                 if not self.parameters.get("order_by"):
                     # override implicit ordering when using ranked ordering.
                     query_order_by[-1] = "rank"
 
             if self._delta:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(
+                        f"****** {self.__class__.__name__}.execute_individual_query: calling add_deltas() with original query_data, query_sum"
+                    )
                 query_data = self.add_deltas(query_data, query_sum)
 
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.execute_individual_query: Checking for a order-by date in query_order_by"
+                )
             order_date = None
             for i, param in enumerate(query_order_by):
                 if check_if_valid_date_str(param):
@@ -622,6 +686,10 @@ select coalesce(raa.account_alias, t.usage_account_id)::text as "account",
                     break
             # Remove the date order by as it is not actually used for ordering
             if order_date:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(
+                        f"****** {self.__class__.__name__}.execute_individual_query: filter the data saving only the dates matching order_date. query_data is {type(query_data).__name__}"
+                    )
 
                 sort_term = self._get_group_by()[0]
                 query_order_by.pop(i)
@@ -630,42 +698,72 @@ select coalesce(raa.account_alias, t.usage_account_id)::text as "account",
                     for key, value in index.items():
                         if (key == "date") and (value == order_date):
                             filtered_query_data.append(index)
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(
+                        f"****** {self.__class__.__name__}.execute_individual_query: order the filtered data using order_by method"
+                    )
                 ordered_data = self.order_by(filtered_query_data, query_order_by)
                 order_of_interest = []
                 for entry in ordered_data:
                     order_of_interest.append(entry.get(sort_term))
                 # write a special order by function that iterates through the
                 # rest of the days in query_data and puts them in the same order
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: handle order-of-interest")
                 sorted_data = [item for x in order_of_interest for item in query_data if item.get(sort_term) == x]
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(
+                        f"****** {self.__class__.__name__}.execute_individual_query: call order_by to sort the sorted data by '-date'"
+                    )
                 query_data = self.order_by(sorted_data, ["-date"])
             else:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(
+                        f"****** {self.__class__.__name__}.execute_individual_query: call order_by to sort the query_data by the query_order_by"
+                    )
                 query_data = self.order_by(query_data, query_order_by)
 
             # Fetch the data (returning list(dict))
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.execute_individual_query: transform ordered_data to a list type"
+                )
             query_results = list(query_data)
 
             # Resolve tag exists for unique account returned
             # if tag_results is not Falsey
             # Append the flag to the query result for the report
             if tag_results is not None:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: apply tag_results boolean")
                 # Add the tag results to the report query result dicts
                 for res in query_results:
                     res["tags_exist"] = tag_results.get(res["account_alias"], False)
 
             if not self.is_csv_output:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: call apply_group_by method")
                 groups = copy.deepcopy(query_group_by)
                 groups.remove("date")
                 data = self._apply_group_by(query_results, groups)
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: call _transform_data method")
                 data = self._transform_data(query_group_by, 0, data)
             else:
+                if getattr(self, "_from_cost_view", False):
+                    LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: set data = query_results")
                 data = query_results
 
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: process ordered_total")
         key_order = list(["units"] + list(annotations.keys()))
         ordered_total = {total_key: query_sum[total_key] for total_key in key_order if total_key in query_sum}
         ordered_total.update(query_sum)
 
         query_sum = ordered_total
         query_data = data
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.execute_individual_query: return query_data, query_sum")
         return query_data, query_sum
 
     def calculate_total(self, **units):
@@ -714,7 +812,20 @@ select coalesce(raa.account_alias, t.usage_account_id)::text as "account",
         and the query needs that for rankings to work.
         """
         if "account" in self._get_group_by():
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}._group_by_ranks : annotate query ({type(query).__name__}) with coalesce on alias, usage_account_id"
+                )
             query = query.annotate(
                 special_rank=Coalesce(F(self._mapper.provider_map.get("alias")), "usage_account_id")
             )
-        return super()._group_by_ranks(query, data)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(
+                f"****** {self.__class__.__name__}._group_by_ranks : Calling super()._group_by_ranks with query ({type(query).__name__}) and data ({type(data).__name__})"
+            )
+        results = super()._group_by_ranks(query, data)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(
+                f"****** {self.__class__.__name__}._group_by_ranks : POST super()._group_by_ranks returning results"
+            )
+        return results

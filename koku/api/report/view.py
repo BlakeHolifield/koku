@@ -1,3 +1,4 @@
+# flake8: noqa#
 #
 # Copyright 2021 Red Hat Inc.
 # SPDX-License-Identifier: Apache-2.0
@@ -147,16 +148,31 @@ class ReportView(APIView):
 
         """
         LOG.debug(f"API: {request.path} USER: {request.user.username}")
+        if self.__class__.__name__ == "AWSCostView":
+            LOG.info("***** AWSCostView GET Request BEGIN ******")
+            logging.getLogger("django.db.backends").setLevel(logging.DEBUG)
 
         try:
             params = QueryParameters(request=request, caller=self, **kwargs)
         except ValidationError as exc:
+            if self.__class__.__name__ == "AWSCostView":
+                LOG.warning("***** AWSCostView Exception ValidationError on QueryParameters ******")
+                logging.getLogger("django.db.backends").setLevel(logging.ERROR)
             return Response(data=exc.detail, status=status.HTTP_400_BAD_REQUEST)
+        if self.__class__.__name__ == "AWSCostView":
+            LOG.info("***** AWSCostView GET Request Setup query handler ******")
         handler = self.query_handler(params)
+        if self.__class__.__name__ == "AWSCostView":
+            setattr(handler, "_from_cost_view", True)
+            LOG.info("***** AWSCostView GET Request Setup execute_query() ******")
         output = handler.execute_query()
+        if self.__class__.__name__ == "AWSCostView":
+            LOG.info("***** AWSCostView GET Request Setup POST-execute_query() ******")
         max_rank = handler.max_rank
 
         if "units" in params.parameters:
+            if self.__class__.__name__ == "AWSCostView":
+                LOG.info("***** AWSCostView GET Request Setup Handle Unit Conversion ******")
             from_unit = _find_unit()(output["data"])
             if from_unit:
                 try:
@@ -168,7 +184,17 @@ class ReportView(APIView):
                     error = {"details": _("Unit conversion failed.")}
                     raise ValidationError(error)
 
+        if self.__class__.__name__ == "AWSCostView":
+            LOG.info("***** AWSCostView GET Request Get Paginator ******")
         paginator = get_paginator(params.parameters.get("filter", {}), max_rank, request.query_params)
+        if self.__class__.__name__ == "AWSCostView":
+            LOG.info("***** AWSCostView GET Request Paginate query results ******")
         paginated_result = paginator.paginate_queryset(output, request)
         LOG.debug(f"DATA: {output}")
-        return paginator.get_paginated_response(paginated_result)
+        if self.__class__.__name__ == "AWSCostView":
+            LOG.info("***** AWSCostView GET Request Paginate response ******")
+        response = paginator.get_paginated_response(paginated_result)
+        if self.__class__.__name__ == "AWSCostView":
+            LOG.info("***** AWSCostView GET Request END ******")
+            logging.getLogger("django.db.backends").setLevel(logging.error)
+        return response
