@@ -841,25 +841,50 @@ class ReportQueryHandler(QueryHandler):
 
         """
         if ranks:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(f"****** {self.__class__.__name__}.super()._ranked_list : getting len(ranks)")
             self.max_rank = len(ranks)
         elif data_list:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.super()._ranked_list : getting max(entry.get('rank', 0) for entry in data_list)"
+                )
             self.max_rank = max(entry.get("rank", 0) for entry in data_list)
 
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.super()._ranked_list : getting date_group_data(data_list)")
         date_grouped_data, account_alias_map = self.date_group_data(data_list)
         if ranks:
             padded_data = OrderedDict()
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.super()._ranked_list : calling _zerofill_ranks method {len(date_grouped_data)} times"
+                )
             for date in date_grouped_data:
                 padded_data[date] = self._zerofill_ranks(date_grouped_data[date], ranks, account_alias_map)
         else:
+            if getattr(self, "_from_cost_view", False):
+                LOG.info(
+                    f"****** {self.__class__.__name__}.super()._ranked_list : setting padded_group_data to date_grouped_data"
+                )
             padded_data = date_grouped_data
 
         rank_limited_data = OrderedDict()
         is_offset = "offset" in self.parameters.get("filter", {})
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(
+                f"****** {self.__class__.__name__}.super()._ranked_list : Calling _perform_rank_summarization {len(padded_data)} times"
+            )
         for date in padded_data:
             ranked_list = self._perform_rank_summation(padded_data[date], is_offset, ranks)
             rank_limited_data[date] = ranked_list
 
-        return self.unpack_date_grouped_data(rank_limited_data)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.super()._ranked_list : Calling unpack_date_grouped_data")
+        result = self.unpack_date_grouped_data(rank_limited_data)
+        if getattr(self, "_from_cost_view", False):
+            LOG.info(f"****** {self.__class__.__name__}.super()._ranked_list : returning results")
+        return result
 
     def _zerofill_ranks(self, data, ranks, account_alias_map):
         """Ensure the data set has at least one entry from every ranked category."""
@@ -868,26 +893,38 @@ class ReportQueryHandler(QueryHandler):
         data_ranks = [item[rank_field] for item in data]
         missing = list(set(ranks) - set(data_ranks))
 
-        row_defaults = {
-            "str": "",
-            "int": 0,
-            "float": 0.0,
-            "dict": {},
-            "list": [],
-            "Decimal": Decimal(0),
-            "NoneType": None,
-        }
-        empty_row = {key: row_defaults[str(type(val).__name__)] for key, val in data[0].items()}
-        missed_data = []
-        for missed in missing:
-            ranked_empty_row = copy.deepcopy(empty_row)
-            ranked_empty_row[rank_field] = missed
-            ranked_empty_row["date"] = data[0].get("date")
-            if rank_field == "account":
-                ranked_empty_row["account_alias"] = account_alias_map.get(missed, missed)
-            missed_data.append(ranked_empty_row)
-        new_data = data + missed_data
-        return new_data
+        fd = data[0]  # first data
+        zfdata = [
+            {k: m if k == rank_field else fd.get(k) if k == "date" else type(v)() for k, v in fd.items()}
+            for m in missing
+        ]  # noqa
+        if rank_field == "account":
+            for rec in zfdata:
+                _acct = rec[rank_field]
+                rec["account_alias"] = account_alias_map.get(_acct, _acct)
+
+        return data + zfdata
+
+        # row_defaults = {
+        #     "str": "",
+        #     "int": 0,
+        #     "float": 0.0,
+        #     "dict": {},
+        #     "list": [],
+        #     "Decimal": Decimal(0),
+        #     "NoneType": None,
+        # }
+        # empty_row = {key: row_defaults[str(type(val).__name__)] for key, val in data[0].items()}
+        # missed_data = []
+        # for missed in missing:
+        #     ranked_empty_row = copy.deepcopy(empty_row)
+        #     ranked_empty_row[rank_field] = missed
+        #     ranked_empty_row["date"] = data[0].get("date")
+        #     if rank_field == "account":
+        #         ranked_empty_row["account_alias"] = account_alias_map.get(missed, missed)
+        #     missed_data.append(ranked_empty_row)
+        # new_data = data + missed_data
+        # return new_data
 
     def _perform_rank_summation(self, entry, is_offset=False, ranks=[]):  # noqa: C901
         """Do the rank limiting for _ranked_list().
@@ -900,7 +937,8 @@ class ReportQueryHandler(QueryHandler):
         other = None
         ranked_list = []
         others_list = []
-        other_sums = {column: 0 for column in self._mapper.sum_columns}
+        #        other_sums = {column: 0 for column in self._mapper.sum_columns}
+        other_sums = dict.fromkeys(self._mapper.sum_columns, 0)
 
         for data in entry:
             if other is None:
@@ -919,14 +957,16 @@ class ReportQueryHandler(QueryHandler):
             else:
                 others_list.append(data)
                 for column in self._mapper.sum_columns:
-                    other_sums[column] += data.get(column) if data.get(column) else 0
+                    #                    other_sums[column] += data.get(column) if data.get(column) else 0
+                    other_sums[column] += data.get(column) or 0
 
         if other is not None and others_list and not is_offset:
             num_others = len(others_list)
-            others_label = "Others"
+            others_label = "Others" if num_others > 1 else "Other"
+            # others_label = "Others"
 
-            if num_others == 1:
-                others_label = "Other"
+            # if num_others == 1:
+            #     others_label = "Other"
 
             other.update(other_sums)
             other["rank"] = self._limit + 1
