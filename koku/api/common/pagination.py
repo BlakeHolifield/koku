@@ -71,18 +71,21 @@ class StandardResultsSetPagination(LimitOffsetPagination):
 
     def get_paginated_response(self, data):
         """Override pagination output."""
-        return Response(
-            {
-                "meta": {"count": self.count},
-                "links": {
-                    "first": self.get_first_link(),
-                    "next": self.get_next_link(),
-                    "previous": self.get_previous_link(),
-                    "last": self.get_last_link(),
-                },
-                "data": data,
-            }
-        )
+        _data = {
+            "meta": {"count": self.count},
+            "links": {
+                "first": self.get_first_link(),
+                "next": self.get_next_link(),
+                "previous": self.get_previous_link(),
+                "last": self.get_last_link(),
+            },
+            "data": data,
+        }
+        return JsonResponse(_data, json_dumps_params={"default": str})
+        # return Response(
+        #     _data,
+        #     content_type=content_type,
+        # )
 
 
 class ListPaginator(StandardResultsSetPagination):
@@ -180,7 +183,8 @@ class ReportPagination(StandardResultsSetPagination):
             "data": paginated_data,
         }
         response["meta"].update(data)
-        return Response(response)
+        return JsonResponse(response, json_dumps_params={"default": str})
+        # return Response(response, content_type=content_type)
 
 
 class ForecastListPaginator(ListPaginator):

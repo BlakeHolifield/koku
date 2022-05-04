@@ -196,5 +196,5 @@ class ReportView(APIView):
         response = paginator.get_paginated_response(paginated_result)
         if self.__class__.__name__ == "AWSCostView":
             LOG.info("***** AWSCostView GET Request END ******")
-            logging.getLogger("django.db.backends").setLevel(logging.error)
+            logging.getLogger("django.db.backends").setLevel(logging.ERROR)
         return response
