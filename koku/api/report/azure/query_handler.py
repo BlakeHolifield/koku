@@ -189,7 +189,6 @@ class AzureReportQueryHandler(ReportQueryHandler):
                 )
                 query_data = query_data.order_by(preserved, "-date")
             else:
-                # &order_by[cost]=desc&order_by[date]=2021-08-02
                 query_data = self.order_by(query_data, query_order_by)
 
             if is_csv_output:

@@ -650,7 +650,6 @@ class ReportQueryHandler(QueryHandler):
         ]
         tag_prefix = "tag:"
         db_tag_prefix = f"{self._mapper.tag_column}__"
-        sorted_data = data
 
         better_ordering = []
         for field in reversed(order_fields):
@@ -671,18 +670,17 @@ class ReportQueryHandler(QueryHandler):
                 better_ordering.append(f"{prefix}{tag}")
                 # sorted_data = sorted(sorted_data, key=lambda entry: (entry[tag] is None, entry[tag]), reverse=reverse)
             else:
-                for line_data in sorted_data:
+                # how do we do these steps with a queryset?
+                for line_data in data:
                     if not line_data.get(field):
                         line_data[field] = f"no-{field}"
-                sorted_data = sorted(
-                    sorted_data,
+                data = sorted(
+                    data,
                     key=lambda entry: (bool(re.match(r"other*", entry[field].lower())), entry[field].lower()),
                     reverse=reverse,
                 )
 
-        sorted_data.order_by(*better_ordering)
-
-        return sorted_data
+        return data.order_by(*better_ordering)
 
     def get_tag_order_by(self, tag):
         """Generate an OrderBy clause forcing JSON column->key to be used.
