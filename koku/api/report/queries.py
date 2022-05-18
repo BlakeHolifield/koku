@@ -648,23 +648,28 @@ class ReportQueryHandler(QueryHandler):
             "infra_total",
             "cost_total",
         ]
-        tag_str = "tag:"
-        db_tag_prefix = self._mapper.tag_column + "__"
+        tag_prefix = "tag:"
+        db_tag_prefix = f"{self._mapper.tag_column}__"
         sorted_data = data
+
+        better_ordering = []
         for field in reversed(order_fields):
+            prefix = ""
             reverse = False
             field = field.replace("delta", "delta_percent")
             if field.startswith("-"):
+                prefix = "-"
                 reverse = True
                 field = field[1:]
             if field in numeric_ordering:
-                sorted_data = sorted(
-                    sorted_data, key=lambda entry: (entry[field] is None, entry[field]), reverse=reverse
-                )
-            elif tag_str in field:
-                tag_index = field.index(tag_str) + len(tag_str)
-                tag = db_tag_prefix + field[tag_index:]
-                sorted_data = sorted(sorted_data, key=lambda entry: (entry[tag] is None, entry[tag]), reverse=reverse)
+                better_ordering.append(f"{prefix}{field}")
+                # sorted_data = sorted(
+                #     sorted_data, key=lambda entry: (entry[field] is None, entry[field]), reverse=reverse
+                # )
+            elif field.startswith(tag_prefix):
+                tag = db_tag_prefix + field[len(tag_prefix) :]  # noqa: E203
+                better_ordering.append(f"{prefix}{tag}")
+                # sorted_data = sorted(sorted_data, key=lambda entry: (entry[tag] is None, entry[tag]), reverse=reverse)
             else:
                 for line_data in sorted_data:
                     if not line_data.get(field):
@@ -674,6 +679,8 @@ class ReportQueryHandler(QueryHandler):
                     key=lambda entry: (bool(re.match(r"other*", entry[field].lower())), entry[field].lower()),
                     reverse=reverse,
                 )
+
+        sorted_data.order_by(*better_ordering)
 
         return sorted_data
 

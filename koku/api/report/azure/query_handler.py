@@ -6,9 +6,11 @@
 import copy
 import logging
 
+from django.db.models import Case
 from django.db.models import ExpressionWrapper
 from django.db.models import F
 from django.db.models import Value
+from django.db.models import When
 from django.db.models.fields import CharField
 from django.db.models.functions import Coalesce
 from django.db.models.functions import Concat
@@ -177,20 +179,15 @@ class AzureReportQueryHandler(ReportQueryHandler):
             if order_date:
                 sort_term = self._get_group_by()[0]
                 query_order_by.pop(i)
-                filtered_query_data = []
-                for index in query_data:
-                    for key, value in index.items():
-                        if (key == "date") and (value == order_date):
-                            filtered_query_data.append(index)
+
+                filtered_query_data = query_data.filter(date=order_date)
                 ordered_data = self.order_by(filtered_query_data, query_order_by)
-                order_of_interest = []
-                for entry in ordered_data:
-                    order_of_interest.append(entry.get(sort_term))
-                # write a special order by function that iterates through the
-                # rest of the days in query_data and puts them in the same order
-                # return_query_data = []
-                sorted_data = [item for x in order_of_interest for item in query_data if item.get(sort_term) == x]
-                query_data = self.order_by(sorted_data, ["-date"])
+
+                order_of_interest = list(ordered_data.values_list(sort_term, flat=True))
+                preserved = Case(
+                    *[When(**{sort_term: term, "then": pos}) for pos, term in enumerate(order_of_interest)]
+                )
+                query_data = query_data.order_by(preserved, "-date")
             else:
                 # &order_by[cost]=desc&order_by[date]=2021-08-02
                 query_data = self.order_by(query_data, query_order_by)
