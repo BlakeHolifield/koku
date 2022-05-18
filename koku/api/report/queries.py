@@ -6,7 +6,6 @@
 import copy
 import logging
 import random
-import re
 import string
 from collections import defaultdict
 from collections import OrderedDict
@@ -31,6 +30,12 @@ from api.models import Provider
 from api.query_filter import QueryFilter
 from api.query_filter import QueryFilterCollection
 from api.query_handler import QueryHandler
+
+# import re
+# from django.db.models import Value
+# from django.db.models.expressions import ExpressionWrapper
+# from django.db.models.functions import Coalesce
+# from django.forms import CharField
 
 LOG = logging.getLogger(__name__)
 
@@ -651,36 +656,35 @@ class ReportQueryHandler(QueryHandler):
         tag_prefix = "tag:"
         db_tag_prefix = f"{self._mapper.tag_column}__"
 
-        better_ordering = []
+        order = []
         for field in reversed(order_fields):
             prefix = ""
-            reverse = False
             field = field.replace("delta", "delta_percent")
             if field.startswith("-"):
                 prefix = "-"
-                reverse = True
                 field = field[1:]
-            if field in numeric_ordering:
-                better_ordering.append(f"{prefix}{field}")
-                # sorted_data = sorted(
-                #     sorted_data, key=lambda entry: (entry[field] is None, entry[field]), reverse=reverse
-                # )
-            elif field.startswith(tag_prefix):
+
+            if field.startswith(tag_prefix):
+                # convert `tag` queries to the correct db query format
                 tag = db_tag_prefix + field[len(tag_prefix) :]  # noqa: E203
-                better_ordering.append(f"{prefix}{tag}")
-                # sorted_data = sorted(sorted_data, key=lambda entry: (entry[tag] is None, entry[tag]), reverse=reverse)
+                order.append(f"{prefix}{tag}")
             else:
-                # how do we do these steps with a queryset?
+                order.append(f"{prefix}{field}")
+                if field in numeric_ordering:
+                    continue
                 for line_data in data:
+                    # Convert `None` values to `no-{field}` values
                     if not line_data.get(field):
                         line_data[field] = f"no-{field}"
-                data = sorted(
-                    data,
-                    key=lambda entry: (bool(re.match(r"other*", entry[field].lower())), entry[field].lower()),
-                    reverse=reverse,
-                )
 
-        return data.order_by(*better_ordering)
+                # what is this key??
+                # data = sorted(
+                #     data,
+                #     key=lambda entry: (bool(re.match(r"other*", entry[field].lower())), entry[field].lower()),
+                #     reverse=reverse,
+                # )
+
+        return data.order_by(*order)
 
     def get_tag_order_by(self, tag):
         """Generate an OrderBy clause forcing JSON column->key to be used.
