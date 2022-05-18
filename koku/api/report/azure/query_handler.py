@@ -180,14 +180,14 @@ class AzureReportQueryHandler(ReportQueryHandler):
                 sort_term = self._get_group_by()[0]
                 query_order_by.pop(i)
 
-                filtered_query_data = query_data.filter(date=order_date)
-                ordered_data = self.order_by(filtered_query_data, query_order_by)
+                date_query_data = query_data.filter(date=order_date)
+                ordered_date_data = self.order_by(date_query_data, query_order_by)
 
-                order_of_interest = list(ordered_data.values_list(sort_term, flat=True))
-                preserved = Case(
+                order_of_interest = list(ordered_date_data.values_list(sort_term, flat=True))
+                order_by_expression = Case(
                     *[When(**{sort_term: term, "then": pos}) for pos, term in enumerate(order_of_interest)]
                 )
-                query_data = query_data.order_by(preserved, "-date")
+                query_data = query_data.order_by(order_by_expression, "-date")
             else:
                 query_data = self.order_by(query_data, query_order_by)
 
