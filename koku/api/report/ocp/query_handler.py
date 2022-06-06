@@ -23,6 +23,8 @@ from api.report.queries import ReportQueryHandler
 from koku.settings import KOKU_DEFAULT_CURRENCY
 from reporting.provider.ocp.models import OCPUsageLineItemDailySummary
 
+# from pprint import pformat
+
 LOG = logging.getLogger(__name__)
 
 
@@ -185,14 +187,9 @@ class OCPReportQueryHandler(ReportQueryHandler):
         Finds the best identify key for order by
         """
         # If there is no group by then it is sorted by day
-        group_by = None
-        order_by = None
-        groupby = self._get_group_by()
-        if groupby:
-            group_by = groupby[0]
         if self.order:
             order_by = self.order[0]
-        return group_by, order_by
+        return self._get_group_by(), order_by
 
     # fmt: off
     def aggregate_currency_codes(self, currency_codes, extra_deltas):  # noqa: C901, E501
@@ -200,6 +197,8 @@ class OCPReportQueryHandler(ReportQueryHandler):
         # fmt: on
         order_numbers = {}
         meta_data = {}
+        # TODO: Need to rewrite the ordering mapping
+        # to handle multiple grroup by options
         group_by, order_by = self._find_identity_key()
         meta_data["group_by_key"] = group_by
         total_results = {
@@ -237,7 +236,15 @@ class OCPReportQueryHandler(ReportQueryHandler):
             exchange_rate = self._get_exchange_rate(currency)
             ui_dikts = {"total": total_results}
             for unconverted in unconverted_values:
-                groupby_key_value = unconverted.get(group_by)
+                # Note: Changeing this value to a list.
+                # group_by_idx = group_by[-1]
+                # groupby_key_value = unconverted.get(group_by_idx)
+                # Debugging BEGIN
+                # LOG.info("-----------------")
+                # LOG.info(f"group_by: {group_by}")
+                # LOG.info(f"unconverted: {pformat(unconverted)}")
+                # LOG.info("-----------------")
+                # Debugging END
                 date = unconverted.get("date")
                 meta_data["date"] = date
                 currencys_values = currencys.get(currency)
@@ -284,12 +291,28 @@ class OCPReportQueryHandler(ReportQueryHandler):
                                 order_value = Decimal(check_val.get("value")) + Decimal(total_query_val)
                                 ui_view_dikt[key]["value"] = order_value
                                 ui_view_dikt[key]["units"] = check_val.get("units")
-                                if key in order_by and groupby_key_value:
-                                    if order_numbers.get(date):
-                                        dict_to_update = order_numbers[date]
-                                        dict_to_update[groupby_key_value] = order_value
-                                    else:
-                                        order_numbers[date] = {groupby_key_value: order_value}
+                                if key in order_by and group_by:
+                                    # Trying to rewrite this to handle multi group by
+                                    groupby_values = [unconverted.get(val) for val in group_by]
+                                    meta_data["groupby_values"] = groupby_values
+                                    groupby_values.reverse()
+                                    template = None
+                                    for groupby_value in groupby_values:
+                                        if not template:
+                                            template = {groupby_value: order_value}
+                                        else:
+                                            template = {groupby_value: template}
+                                    order_numbers = {date: template}
+                                    # TODO: I don't think we need to update order_numbers here
+                                    # order_numbers = self._update_nested_dict(order_numbers, template)
+                                    # LOG.info(f"order_numbers: {order_numbers}")
+
+                                    # THE OLD WAY
+                                    # if order_numbers.get(date):
+                                    #     dict_to_update = order_numbers[date]
+                                    #     dict_to_update[groupby_key_value] = order_value
+                                    # else:
+                                    #     order_numbers[date] = {groupby_key_value: order_value}
                         elif key == "delta_percent":
                             current_delta = unconverted.get("delta_value", 0)
                             percentage = unconverted.get("delta_percent", None)
@@ -362,7 +385,6 @@ class OCPReportQueryHandler(ReportQueryHandler):
             query_data = query_data.values(*query_group_by).annotate(**self.report_annotations)
             if self._limit and query_data:
                 query_data = self._group_by_ranks(query, query_data)
-                # the no node issue is happening here
                 if not self.parameters.get("order_by"):
                     # override implicit ordering when using ranked ordering.
                     query_order_by[-1] = "rank"
@@ -385,13 +407,11 @@ class OCPReportQueryHandler(ReportQueryHandler):
 
             order_date = None
             for i, param in enumerate(query_order_by):
-                # enter
                 if check_if_valid_date_str(param):
                     order_date = param
                     break
             # Remove the date order by as it is not actually used for ordering
             if order_date:
-                # no enter
                 sort_term = self._get_group_by()[0]
                 query_order_by.pop(i)
                 filtered_query_data = []
@@ -409,7 +429,6 @@ class OCPReportQueryHandler(ReportQueryHandler):
                 sorted_data = [item for x in order_of_interest for item in query_data if item.get(sort_term) == x]
                 query_data = self.order_by(sorted_data, ["-date"])
             else:
-                # enter
                 query_data = self.order_by(query_data, query_order_by)
 
             if is_csv_output:
@@ -420,7 +439,6 @@ class OCPReportQueryHandler(ReportQueryHandler):
             else:
                 # Pass in a copy of the group by without the added
                 # tag column name prefix
-                # enter
                 groups = copy.deepcopy(query_group_by)
                 groups.remove("date")
                 data = self._apply_group_by(list(query_data), groups)
@@ -443,12 +461,36 @@ class OCPReportQueryHandler(ReportQueryHandler):
                 self.query_data,
                 extra_deltas=extra_deltas)
             key_order_dict = self.find_key_order(order_numbers)
-            # TODO: CODY - The ordering logic I came up with
-            # does not work on multiple group bys.
-            if len(groupby) == 1:
-                # TODO: Cody - Figure out if this deepcopy is needed
-                copy_data = copy.deepcopy(self.query_data)
-                self.query_data = self.build_reordered(copy_data, key_order_dict, order_mapping, groupby[0])
+            if groupby:
+                # TODO: Turning off deepcopy here to see if we need it.
+                # if we experience wonkiness, we should turn it back on.
+                # copy_data = copy.deepcopy(self.query_data)
+                # self.query_data = self.build_reordered(copy_data, key_order_dict, order_mapping, groupby[0])
+                # Debugging BEGIN:
+                # LOG.info(f"\n\norder_mapping: {pformat(order_mapping)}")
+                # LOG.info("-----------------------------------------------")
+                # LOG.info("-----------------------------------------------")
+                # LOG.info("-----------------------------------------------")
+                # LOG.info("\n\n\n\n\n")
+                # LOG.info("Initial query_data")
+                # LOG.info(f"self.query_data: \n\n\n\n\n\n\n\n")
+                # LOG.info(pformat(self.query_data))
+                # LOG.info("\n\n")
+                # total_list = []
+                # for _, value in order_mapping.get("2022-06").items():
+                #     # LOG.info("\n\n\n\n")
+                #     # LOG.info(f"value: {pformat(value)}")
+                #     value_list = value.get("values")
+                #     for item in value_list:
+                #         total_list.append(item["cost"]["total"]["value"])
+                # LOG.info(f"cost_total in code: {sum(total_list)}")
+                # Debugging END
+                # LOG.info(f"\n\nkey_order_dict: {pformat(key_order_dict)}")
+                group_identifier, _ = self._find_identity_key()
+                self.build_reordered(self.query_data, key_order_dict, order_mapping, group_identifier[-1])
+            # LOG.info("----------------------------------------")
+            # LOG.info("----- After REORDERED -----")
+            # LOG.info(f"self.query_data: {pformat(self.query_data)}")
 
         self.query_sum = ordered_total
 

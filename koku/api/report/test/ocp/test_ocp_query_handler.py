@@ -110,6 +110,21 @@ class OCPReportQueryHandlerTest(IamTestCase):
         }
         return test_dict
 
+    def test_subtotals_add_up_to_total_cnp(self, mocked_exchange_rates):
+        """Test the apply_group_by handles different grouping scenerios."""
+        group_by = ("cluster", "node", "project")
+        tolerance = 1
+        test_results = self._compare_query_results(group_by)
+        # LOG.info(f"\n test_results: {test_results}")z
+        for _, data in test_results.items():
+            expected = data["expected"]
+            result = data["result"]
+            self.assertIsNotNone(expected)
+            self.assertIsNotNone(result)
+            LOG.info(f"expected in test: {expected}")
+            LOG.info(f"result in testt: {result}")
+            self.assertLessEqual(abs(expected - result), tolerance)
+
     def test_execute_sum_query(self, mocked_exchange_rates):
         """Test that the sum query runs properly."""
         url = "?"
@@ -637,18 +652,6 @@ class OCPReportQueryHandlerTest(IamTestCase):
     def test_subtotals_add_up_to_total_pnc(self, mocked_exchange_rates):
         """Test the apply_group_by handles different grouping scenerios."""
         group_by = ("project", "node", "cluster")
-        tolerance = 1
-        test_results = self._compare_query_results(group_by)
-        for _, data in test_results.items():
-            expected = data["expected"]
-            result = data["result"]
-            self.assertIsNotNone(expected)
-            self.assertIsNotNone(result)
-            self.assertLessEqual(abs(expected - result), tolerance)
-
-    def test_subtotals_add_up_to_total_cnp(self, mocked_exchange_rates):
-        """Test the apply_group_by handles different grouping scenerios."""
-        group_by = ("cluster", "node", "project")
         tolerance = 1
         test_results = self._compare_query_results(group_by)
         for _, data in test_results.items():

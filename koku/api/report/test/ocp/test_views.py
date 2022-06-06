@@ -7,7 +7,6 @@ import datetime
 import logging
 import random
 from decimal import Decimal
-from pprint import pformat
 from unittest import skip
 from unittest.mock import patch
 from urllib.parse import quote_plus
@@ -418,9 +417,7 @@ class OCPReportViewTest(IamTestCase):
         self.assertEqual(dates[-1], expected_end_date)
 
         for item in data.get("data"):
-            blah = item.get("values")
-            if blah:
-                LOG.info(f"values: {blah}")
+            if item.get("values"):
                 values = item.get("values")[0]
                 self.assertTrue("limit" in values)
                 self.assertTrue("usage" in values)
@@ -428,17 +425,6 @@ class OCPReportViewTest(IamTestCase):
 
     def test_execute_query_ocp_memory_group_by_limit(self, mocked_exchange_rates, mock_base_currency):
         """Test that OCP Mem endpoint works with limits."""
-        # Query to reproduce in test_postgres
-        # select usage_start, sum(pod_usage_memory_gigabyte_hours)
-        # from reporting_ocpusagelineitem_daily_summary where
-        # usage_start >= '2022-05-21' and data_source = 'Pod'
-        # group by usage_start order by usage_start;
-
-        # It is not taking node2 into consideration.
-
-        # select usage_start, sum(pod_usage_memory_gigabyte_hours), node
-        # from reporting_ocpusagelineitem_daily_summary where usage_start >= '2022-05-21'
-        # and data_source = 'Pod' group by usage_start, node order by usage_start;
         url = reverse("reports-openshift-memory")
         client = APIClient()
         params = {
@@ -449,7 +435,6 @@ class OCPReportViewTest(IamTestCase):
             "filter[resolution]": "daily",
         }
         url = f"{url}?{urlencode(params, quote_via=quote_plus)}"
-        LOG.info(f"url: {pformat(url)}")
         response = client.get(url, **self.headers)
         data = response.data
 
@@ -1405,7 +1390,10 @@ class OCPReportViewTest(IamTestCase):
 
     def test_execute_query_with_group_by_order_by_and_limit(self, mocked_exchange_rates, mock_base_currency):
         """Test that data is grouped by and limited on order by."""
+        # from pprint import pformat
+
         order_by_options = ["cost", "infrastructure", "supplementary", "usage", "request", "limit"]
+        order_by_options = ["request"]
         order_mapping = ["cost", "infrastructure", "supplementary"]
 
         for option in order_by_options:
@@ -1422,6 +1410,7 @@ class OCPReportViewTest(IamTestCase):
                 }
 
                 url = f'{reverse("reports-openshift-cpu")}?' + urlencode(params, quote_via=quote_plus)
+                LOG.info(url)
                 response = client.get(url, **self.headers)
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 data = response.json()
@@ -1442,15 +1431,18 @@ class OCPReportViewTest(IamTestCase):
                             continue
                         previous_value = node.get("values", [])[0].get(option, {}).get("value")
                         break
+                debug_list = []
                 for entry in nodes:
-                    LOG.info(f"entry: {entry}")
+                    # LOG.info(f"\n\n\n\nentry: {pformat(entry)}")
                     if entry.get("node", "") in ("Others", "no-node"):
                         continue
                     if data_key:
                         current_value = entry.get("values", [])[0].get(data_key, {}).get("total", {}).get("value")
                     else:
                         current_value = entry.get("values", [])[0].get(option, {}).get("value")
-                    self.assertTrue(current_value <= previous_value)
+                    debug_list.append({entry.get("node", ""): current_value})
+                    LOG.info(debug_list)
+                    self.assertLessEqual(current_value, previous_value)
                     previous_value = current_value
 
     def test_execute_query_with_order_by(self, mocked_exchange_rates, mock_base_currency):

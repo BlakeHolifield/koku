@@ -18,6 +18,7 @@ from decimal import InvalidOperation
 from functools import cached_property
 from itertools import groupby
 from json import dumps as json_dumps
+from pprint import pformat
 from urllib.parse import quote_plus
 from uuid import UUID
 
@@ -831,19 +832,47 @@ class ReportQueryHandler(QueryHandler):
                 currency_list.append(cur_dictionary)
             out_data.pop(codes.get(self.provider))
             out_data["currencys"] = currency_list
-            group_by_key = meta_data.get("group_by_key")
             date = meta_data.get("date")
-            group_by = out_data.get(group_by_key)
-            if group_by_key:
-                if order_mapping.get(date):
-                    dict_to_update = order_mapping[date]
-                    dict_to_update[group_by] = out_data
+            # CREATING NEW STRUCTURE
+            groupby_values = meta_data.get("groupby_values", [])
+            groupby_values.reverse()
+            template = None
+            for groupby_value in groupby_values:
+                if not template:
+                    template = {groupby_value: out_data}
                 else:
-                    order_mapping[date] = {group_by: out_data}
+                    template = {groupby_value: template}
+            template = {date: template}
             meta_orders = meta_data.get("order_numbers", {})
-            for key in meta_orders.keys():
-                if key in order_numbers.keys():
-                    order_numbers[key].update(meta_orders.keys())
+            order_mapping = self._update_nested_dict(order_mapping, template)
+            # LOG.info("\n\nAfter updating with nested dict:")
+            # LOG.info(f"order_mapping: {pformat(order_mapping)}")
+            LOG.info(f"BEFORE: order_numbers: {pformat(order_numbers)}")
+            order_numbers = self._update_nested_dict(order_numbers, meta_orders)
+            LOG.info(f"AFTER: order_numbers: {pformat(order_numbers)}")
+            # LOG.info("\n\nAfter updating with nested dict:")
+            # LOG.info(f"order_numbers: {pformat(order_numbers)}")
+
+            # OLD STRUCTURE
+            # group_by_key = meta_data.get("group_by_key")[-1]
+            # LOG.info(f"group_by_key: {group_by_key}")
+
+            # TODO: Figure out what to do if this is None.
+
+            # group_by = out_data.get(group_by_key, "NOOOOOOOOO!")
+
+            # if group_by_key:
+            #     if order_mapping.get(date):
+            #         dict_to_update = order_mapping[date]
+            #         dict_to_update[group_by] = out_data
+            #     else:
+            #         order_mapping[date] = {group_by: out_data}
+            # meta_orders = meta_data.get("order_numbers", {})
+            # for key in meta_orders.keys():
+            #     if key in order_numbers.keys():
+            #         order_numbers[key].update(meta_orders[key])
+            #     else:
+            #         order_numbers[key] = meta_orders[key]
             # TODO: CODY -> Figure out if this deepcopy is actually needed.
             # LOG.info(f"order_numbers: {order_numbers}")
             order_numbers = copy.deepcopy(order_numbers)
@@ -931,6 +960,8 @@ class ReportQueryHandler(QueryHandler):
                         total_query[key] = new_val
         return total_query, {}
 
+    # TODO: THIS NEEDS TO BE UPDATED TO HANDLE THE NEW
+    # NESTED STRUCTURE
     def find_key_order(self, order_numbers):
         """
         orders the key
@@ -949,12 +980,40 @@ class ReportQueryHandler(QueryHandler):
             ordered_dict[date_key] = key_list
         return ordered_dict
 
+    def _update_nested_dict(self, original, new):
+        """
+        Update a nested dictionary or similar mapping.
+        Modify ``source`` in place.
+        """
+        if isinstance(new, dict):
+            for key, value in new.items():
+                if original.get(key):
+                    returned = self._update_nested_dict(original.get(key, {}), value)
+                    original[key] = returned
+                else:
+                    original[key] = new[key]
+        return original
+
     def build_reordered(self, data, key_order_mapping, key_map, group_key, date=None):  # noqa: C901
         """
-        Builds reordered data.
-        data: list of dictionaries
-        key_order: List with order the keys should be in
-        key_map: dictionary that is mapping of data
+        Background:
+            In order to support currency we need to group by currency so
+            that we can multiply each currency by the rate. When we
+            reaggregate into one day it intermittently broke ordering.
+
+        Purpose:
+            This function recursively craws our aggregated json structure
+            and reorders it properly.
+
+        data (dict): Aggregated json structure
+        key_order_mapping (dict): A mapping of date to ordered list
+            structure: {date: [grouping_order]}
+            Ex: {"06-02-2022": ["node1", "node2"]}
+        key_map (dict): A mapping of group by values to json substructure
+            structure: {date: {group_by_value: {json substructure}}
+            Ex: {"06-02-2022": {"node1": "subjson for node1"}}
+        group_key (str): Group by key (ex: "node")
+        date (str): "06-02-2022"
         """
         if not key_order_mapping or not key_map:
             return data
