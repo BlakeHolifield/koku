@@ -2342,6 +2342,34 @@ objects:
           requests:
             cpu: ${KOKU_CPU_REQUEST}
             memory: ${KOKU_MEMORY_REQUEST}
+    - name: org-id-populator
+      podSpec:
+        image: quay.io/cloudservices/tenant-utils:latest
+        command:
+          - ./org-id-column-populator
+          - -C
+          - -a
+          - account_id // TODO: modify if needed
+          - -o
+          - org_id // TODO: modify if needed
+          - -t
+          - api_customer // TODO: modify if needed
+          - --ean-translator-addr
+          - test
+          - --prometheus-push-addr
+          - ${PROMETHEUS_PUSHGATEWAY}
+        env:
+          - name: LOG_FORMAT
+            value: ${POPULATOR_LOG_FORMAT}
+          - name: LOG_BATCH_FREQUENCY
+            value: '1s'
+        resources:
+          limits:
+            cpu: 300m
+            memory: 1Gi
+          requests:
+            cpu: 50m
+            memory: 512Mi
     kafkaTopics:
     - topicName: platform.sources.event-stream
     - topicName: platform.upload.hccm
@@ -2359,6 +2387,14 @@ objects:
     appName: koku
     jobs:
     - db-migrate-cji-${DBM_IMAGE_TAG}-${DBM_INVOCATION}
+- apiVersion: cloud.redhat.com/v1alpha1
+  kind: ClowdJobInvocation
+  metadata:
+    name: populate-org-id-column-${POPULATOR_RUN_NUMBER}
+  spec:
+    appName: koku // TODO: update this to match the actual app's name
+    jobs:
+      - org-id-populator
 - apiVersion: v1
   data:
     django-secret-key: ${SECRET_KEY}
@@ -2988,3 +3024,11 @@ parameters:
   name: WORKER_HCS_WORKER_QUEUE
   required: true
   value: hcs
+- name: POPULATOR_LOG_FORMAT
+    value: text
+- name: POPULATOR_IMAGE
+  value: quay.io/cloudservices/tenant-utils
+- name: POPULATOR_IMAGE_TAG
+  value: latest
+- name: POPULATOR_RUN_NUMBER # in case the populator needs to be run more than once increment this parameter to get a new job
+  value: "1"
