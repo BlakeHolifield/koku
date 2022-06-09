@@ -2349,11 +2349,11 @@ objects:
           - ./org-id-column-populator
           - -C
           - -a
-          - account_id // TODO: modify if needed
+          - account_id
           - -o
-          - org_id // TODO: modify if needed
+          - org_id
           - -t
-          - api_customer // TODO: modify if needed
+          - api_customer
           - --ean-translator-addr
           - test
           - --prometheus-push-addr
@@ -2392,7 +2392,7 @@ objects:
   metadata:
     name: populate-org-id-column-${POPULATOR_RUN_NUMBER}
   spec:
-    appName: koku // TODO: update this to match the actual app's name
+    appName: koku
     jobs:
       - org-id-populator
 - apiVersion: v1
