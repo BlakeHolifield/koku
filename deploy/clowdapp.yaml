@@ -3025,7 +3025,7 @@ parameters:
   required: true
   value: hcs
 - name: POPULATOR_LOG_FORMAT
-    value: text
+  value: text
 - name: POPULATOR_IMAGE
   value: quay.io/cloudservices/tenant-utils
 - name: POPULATOR_IMAGE_TAG
